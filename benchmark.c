@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/times.h>
+
+#ifndef NOSCHED
+#define __USE_GNU
+#endif
 #include <sched.h>
 
 int
@@ -9,19 +13,25 @@ timeit(int l, int (*sub)(int))
     struct tms tms_st, tms_en;
     int i, j, res;
 
-    if (times(&tms_st) < 0) _exit(-1);
+    // wait for next tick for got lesser error
+    times(&tms_en);
+    times(&tms_st);
+    while(tms_st.tms_utime - tms_en.tms_utime == 0)
+        times(&tms_st);
+
     for (i = 0; i < l; i++) {
         for (j = 0; j < 1e6; j++) {
             res += sub(j & 0x3FF);
         }
     }
-    if (times(&tms_en) < 0) _exit(-2);
+
+    times(&tms_en);
 
     if (res) sched_yield();
     #ifdef DEBUG
-    printf(">>> timeit:\n");
-    printf(">>>   User  : %5d ticks\n", tms_en.tms_utime - tms_st.tms_utime);
-    printf(">>>   System: %5d ticks\n", tms_en.tms_stime - tms_st.tms_stime);
+    fprintf(stderr, ">>> timeit:\n");
+    fprintf(stderr, ">>>   Usr: %5d ticks\n", tms_en.tms_utime - tms_st.tms_utime);
+    fprintf(stderr, ">>>   Sys: %5d ticks\n", tms_en.tms_stime - tms_st.tms_stime);
     #endif
 
     return tms_en.tms_utime - tms_st.tms_utime;
@@ -43,21 +53,30 @@ int
 main(int argc, char ** argv)
 {
     int loops, res, tps;
+    #ifndef NOSCHED
+    cpu_set_t cpu_set;
+    #endif
 
     tps = sysconf(_SC_CLK_TCK);
     #ifdef DEBUG
-    printf(">>> On this system cpu counts %d ticks per second\n", tps);
+    fprintf(stderr, ">>> On this system cpu counts %d ticks per second\n", tps);
     #endif
 
     if (argc  > 1) loops = atoi(argv[1]);
     if (loops < 1) loops = 1;
 
     #ifdef DEBUG
-    printf(">>> Will test sub in %d loops\n", loops);
+    fprintf(stderr, ">>> Will test sub in %d loops\n", loops);
+    #endif
+    #ifndef NOSCHED
+    // set affinity to first cpu
+    CPU_ZERO(&cpu_set);
+    CPU_SET(0, &cpu_set);
+    sched_setaffinity(0, sizeof(cpu_set_t), &cpu_set);
     #endif
     res = timeit(loops, tester) - timeit(loops, stub);
     #ifdef DEBUG
-    printf(">>> Test sub was executed in %d ticks\n", res);
+    fprintf(stderr, ">>> Test sub was executed in %d ticks\n", res);
     #endif
     if (res == 0) res = 1;
     if (res/tps < 2)
