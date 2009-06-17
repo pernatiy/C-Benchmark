@@ -1,0 +1,12 @@
+pass 1
+* arguments parsing
+* sane debug instead of those 3linemegafprintfin120columns
+* real time measurement
+* more verbose reporting
+
+pass 2
+* convert to lib
+* automake
+
+pass 3
+* all the same but in java (special request from cono)
